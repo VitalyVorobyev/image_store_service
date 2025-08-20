@@ -30,7 +30,7 @@ ISS (Image Store Service) is a RESTful API built with FastAPI that provides:
 
 2. Install dependencies:
    ```
-   pip install fastapi uvicorn python-multipart pillow
+   pip install -r .\requirements.txt
    ```
 
 3. Set up the data directory (optional):
