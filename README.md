@@ -24,8 +24,8 @@ ISS (Image Store Service) is a RESTful API built with FastAPI that provides:
 
 1. Clone the repository:
    ```
-   git clone https://github.com/yourusername/iss.git
-   cd iss
+   git clone https://github.com/VitalyVorobyev/image_store_service.git
+   cd image_store_service
    ```
 
 2. Install dependencies:
