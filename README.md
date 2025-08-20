@@ -17,7 +17,7 @@ ISS (Image Store Service) is a RESTful API built with FastAPI that provides:
 
 ### Prerequisites
 
-- Python 3.7+
+- Python 3.10+
 - pip (Python package manager)
 
 ### Setup
