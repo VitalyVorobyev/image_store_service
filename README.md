@@ -43,7 +43,7 @@ ISS (Image Store Service) is a RESTful API built with FastAPI that provides:
 Start the service with:
 
 ```
-uvicorn main:app --reload
+uvicorn iss:app --reload
 ```
 
 This will start the server on `http://127.0.0.1:8000` by default.

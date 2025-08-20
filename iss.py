@@ -1,5 +1,5 @@
 # iss/main.py
-from fastapi import FastAPI, UploadFile, HTTPException, Response
+from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
 import hashlib, os, json, time, io
 from PIL import Image
