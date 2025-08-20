@@ -1,6 +1,6 @@
 # Image Store Service (ISS)
 
-[![ISS - Continuous Integration](https://github.com/yourusername/iss/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/iss/actions/workflows/ci.yml)
+[![ISS - Continuous Integration](https://github.com/VitalyVorobyev/image_store_service/actions/workflows/ci.yml/badge.svg)](https://github.com/VitalyVorobyev/image_store_service/actions/workflows/ci.yml)
 
 A lightweight, fast, and reliable service for storing and retrieving images and other binary artifacts using content-addressable storage.
 
