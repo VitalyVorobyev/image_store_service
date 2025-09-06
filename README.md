@@ -52,21 +52,49 @@ This will start the server on `http://127.0.0.1:8000` by default.
 
 ### Uploading an Image
 
-To upload an image, send a `POST` request to `/upload` with the image file:
+To upload an image, send a `POST` request to `/images` with the image file:
 
-```
+**Linux/macOS:**
+```bash
 curl -X 'POST' \
-  'http://127.0.0.1:8000/upload' \
+  'http://127.0.0.1:8000/images' \
   -F 'file=@/path/to/your/image.jpg'
+```
+
+**Windows Command Prompt:**
+```cmd
+curl -X "POST" ^
+  "http://127.0.0.1:8000/images" ^
+  -F "file=@C:\path\to\your\image.jpg"
+```
+
+**Windows PowerShell:**
+```powershell
+curl -X "POST" `
+  "http://127.0.0.1:8000/images" `
+  -F "file=@C:\path\to\your\image.jpg"
 ```
 
 ### Downloading an Image
 
-To download an image, send a `GET` request to `/download/{image_id}`:
+To download an image, send a `GET` request to `/images/{image_id}`:
 
-```
+**Linux/macOS:**
+```bash
 curl -X 'GET' \
-  'http://127.0.0.1:8000/download/your_image_id'
+  'http://127.0.0.1:8000/images/your_image_id'
+```
+
+**Windows Command Prompt:**
+```cmd
+curl -X "GET" ^
+  "http://127.0.0.1:8000/images/your_image_id"
+```
+
+**Windows PowerShell:**
+```powershell
+curl -X "GET" `
+  "http://127.0.0.1:8000/images/your_image_id"
 ```
 
 ## API Documentation
