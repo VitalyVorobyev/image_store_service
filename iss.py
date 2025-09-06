@@ -1,6 +1,7 @@
 # iss/main.py
 from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 import hashlib, os, json, time, io
 from PIL import Image
 
@@ -9,6 +10,21 @@ BLOBS = os.path.join(DATA, "blobs")
 META  = os.path.join(DATA, "meta")
 os.makedirs(BLOBS, exist_ok=True); os.makedirs(META, exist_ok=True)
 app = FastAPI(title="Image Store Service")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,  # set False if you don’t use cookies/auth
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    # allow_headers can be "*", but if you prefer explicit list, include the ones you use:
+    allow_headers=["*"],  # or ["Authorization","Content-Type","X-Request-Id","Range"]
+    # expose headers you need to read from JS (useful for Range/ETag):
+    expose_headers=["Content-Range", "ETag"],
+    max_age=86400,
+)
 
 def _path_for(h: str):
     assert h.startswith("sha256:")
@@ -36,6 +52,8 @@ async def upload_image(file: UploadFile):
         meta = {"kind":"image","bytes":len(raw),"mime":file.content_type,
                 "width":width,"height":height,"created_at":time.time()}
         with open(meta_path, "w") as f: json.dump(meta, f)
+
+    print(f'returning id {h}')
     return {"image_id": h, "bytes": len(raw), "filename": file.filename}
 
 @app.get("/images/{image_id}")
