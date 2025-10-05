@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 ## [Unreleased]
 - TBD
 
-## [v1.0.0] - 2024-06-01
+## [v0.1.13] - 2025-10-05
 ### Added
 - Initial public release of Image Store Service container image with multi-arch support.
 - `/health` endpoint exposed for uptime probing and monitoring.
@@ -19,4 +19,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - Database migrations: None required (service is file-system backed). Backward compatible with previous local deployments that use `ISS_DATA`.
 - Health endpoint: `GET /health` returns `{ "ok": true }` with HTTP 200.
 
-[v1.0.0]: https://github.com/VitalyVorobyev/image_store_service/releases/tag/v1.0.0
+[v0.1.13]: https://github.com/VitalyVorobyev/image_store_service/releases/tag/v0.1.13
