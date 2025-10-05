@@ -118,7 +118,7 @@ jobs:
           cosign attest --yes \
             --predicate dist/provenance.json \
             --type slsaprovenance \
-            --outfile dist/provenance.intoto.jsonl \
+            --output dist/provenance.intoto.jsonl \
             ${{ env.IMAGE_NAME }}@${{ env.IMAGE_DIGEST }}
 
       - name: Render release notes
