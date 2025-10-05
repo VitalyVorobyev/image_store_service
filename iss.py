@@ -1,8 +1,11 @@
 # iss/main.py
+from __future__ import annotations
+
 from fastapi import FastAPI, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import hashlib, os, json, time, io
+from typing import Optional
 from PIL import Image
 
 DATA = os.environ.get("ISS_DATA", "./data")
@@ -63,7 +66,7 @@ def get_image(image_id: str):
     return StreamingResponse(open(path, "rb"), media_type="application/octet-stream")
 
 @app.post("/artifacts")
-async def upload_artifact(kind: str, meta: str | None = None, file: UploadFile | None = None):
+async def upload_artifact(kind: str, meta: Optional[str] = None, file: Optional[UploadFile] = None):
     raw = await file.read()
     h = "sha256:" + hashlib.sha256(raw).hexdigest()
     blob_path, meta_path = _path_for(h)
@@ -81,5 +84,8 @@ def get_artifact(artifact_id: str):
     if not os.path.exists(path): raise HTTPException(404)
     return StreamingResponse(open(path, "rb"), media_type="application/octet-stream")
 
+@app.get("/health")
 @app.get("/healthz")
-def health(): return {"ok": True}
+def health():
+    """Lightweight readiness probe for orchestration platforms."""
+    return {"ok": True}
