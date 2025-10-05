@@ -6,7 +6,7 @@ cd "$ROOT_DIR"
 
 TARGETS=(
   iss.py
-  test
+  test_iss.py
 )
 
 pylint "${TARGETS[@]}"
