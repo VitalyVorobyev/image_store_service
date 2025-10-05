@@ -156,7 +156,8 @@ class TestArtifactEndpoints:
 
 
 class TestHealthEndpoint:
-    def test_health(self):
-        response = client.get("/healthz")
-        assert response.status_code == 200
-        assert response.json() == {"ok": True}
+    def test_health_aliases(self):
+        for path in ("/health", "/healthz"):
+            response = client.get(path)
+            assert response.status_code == 200
+            assert response.json() == {"ok": True}

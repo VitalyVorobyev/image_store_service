@@ -1,0 +1,24 @@
+services:
+  image-store:
+    image: ghcr.io/vitalyvorobyev/image_store_service:latest
+    restart: unless-stopped
+    environment:
+      ISS_DATA: /var/lib/iss
+    volumes:
+      - iss-data:/var/lib/iss
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+volumes:
+  iss-data:
+    driver: local

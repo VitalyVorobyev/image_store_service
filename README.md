@@ -37,6 +37,7 @@ ISS (Image Store Service) is a RESTful API built with FastAPI that provides:
    ```
    export ISS_DATA=/path/to/data/directory
    ```
+   See `example.env` for all tunable parameters.
 
 ## Running the Service
 
@@ -46,7 +47,14 @@ Start the service with:
 uvicorn iss:app --reload
 ```
 
-This will start the server on `http://127.0.0.1:8000` by default.
+This will start the server on `http://127.0.0.1:8000` by default. The
+container image published to GHCR exposes the service on port `8000` and
+expects persistent storage to be mounted at `/var/lib/iss`.
+
+### Docker Compose snippet
+
+See `compose.service.yaml` for a ready-to-use Compose service block that
+mounts persistent volumes, wires the health check, and exposes the port.
 
 ## Usage
 
@@ -99,7 +107,15 @@ curl -X "GET" `
 
 ## API Documentation
 
-The API is documented using OpenAPI standards. You can access the interactive API documentation at `http://127.0.0.1:8000/docs` after starting the service.
+The API is documented using OpenAPI standards. You can access the interactive
+API documentation at `http://127.0.0.1:8000/docs` after starting the service.
+The CI/release workflow also publishes `openapi.json` alongside every GitHub
+release.
+
+## Health Endpoint
+
+- Readiness / liveness probe: `GET /health`
+- Returns `{ "ok": true }` on success.
 
 ## Testing
 
@@ -125,6 +141,29 @@ This project uses GitHub Actions for continuous integration. The CI pipeline:
 
 You can see the CI configuration in `.github/workflows/ci.yml`.
 
+## Release Process
+
+Releases are driven by semantic version tags in the format `vX.Y.Z`:
+
+1. Update `CHANGELOG.md` and commit your changes.
+2. Create and push a tag, e.g. `git tag v1.0.0 && git push origin v1.0.0`.
+3. The `release` workflow builds and pushes a **multi-arch** image
+   (`linux/amd64`, `linux/arm64`) to `ghcr.io/<owner>/image_store_service`.
+4. The workflow signs the image with Cosign (GitHub OIDC), generates an SBOM
+   (`sbom.spdx.json`), produces a SLSA provenance attestation, and uploads the
+   following assets to the GitHub release:
+   - `openapi.json`
+   - `sbom.spdx.json`
+   - `provenance.intoto.jsonl`
+   - `dist.tar.gz` debug bundle
+   - `compose.service.yaml`
+   - `example.env`
+   - `image-digest.txt`
+5. Release notes are rendered from `CHANGELOG.md` and include the published
+   image digest and operational notes.
+
+The workflow definition lives in `.github/workflows/release.yml`.
+
 ## Contributing
 
 Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) for more information on how to contribute to this project.
@@ -132,4 +171,3 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fo
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
