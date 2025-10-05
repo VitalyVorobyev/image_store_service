@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 ## [Unreleased]
 - TBD
 
+## [v0.1.15] - 2025-10-05
+### Added
+- `pylint` step and badge
+
 ## [v0.1.14] - 2025-10-05
 ### Added
 - Initial public release of Image Store Service container image with multi-arch support.
