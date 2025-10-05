@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from fastapi.openapi.utils import get_openapi
+
+
+def _root_dir() -> Path:
+    # Ensure the project root (which holds `iss.py`) is importable.
+    return Path(__file__).resolve().parent.parent
+
+
+sys.path.insert(0, str(_root_dir()))
 
 from iss import app
 
