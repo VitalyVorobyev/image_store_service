@@ -8,7 +8,7 @@ on:
 permissions:
   contents: write
   packages: write
-  id-token: write
+  id-token: write         # for keyless cosign + attestations
   attestations: write
 
 env:
@@ -21,14 +21,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Compute IMAGE_NAME
-        shell: bash
+      # GHCR requires lowercase image names
+      - name: Compute IMAGE_NAME (lowercase)
         run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install release tooling
         run: |
@@ -37,13 +38,14 @@ jobs:
 
       - name: Generate OpenAPI schema
         run: |
+          mkdir -p dist
           scripts/generate_openapi.py --output dist/openapi.json
 
       - name: Build debug bundle
         run: |
           scripts/build_dist_tarball.sh
 
-      - name: Extract version
+      - name: Extract version from tag
         id: version
         run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
@@ -69,9 +71,10 @@ jobs:
             type=ref,event=tag
             type=raw,value=latest
 
-      - name: Build and push multi-arch image
-        id: build
-        uses: docker/build-push-action@v5
+      # Single build & push (multi-arch) with provenance + SBOM emitted as attestations
+      - name: Build and push image
+        id: push
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
@@ -79,61 +82,63 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max      # generates SLSA provenance attestation
+          sbom: true                # generates SBOM attestation
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Publish provenance attestation via GitHub to OCI (ties it to the pushed digest)
+      - name: Attest build provenance (GitHub -> OCI)
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
       - name: Capture digest
         run: |
-          echo "IMAGE_DIGEST=${{ steps.build.outputs.digest }}" >> "$GITHUB_ENV"
-          echo "IMAGE_DIGEST=${{ steps.build.outputs.digest }}" >> dist/image-digest.txt
-
-      - name: Generate SBOM
-        uses: anchore/sbom-action@v0
-        with:
-          image: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
-          format: spdx-json
-          output-file: dist/sbom.spdx.json
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ secrets.GITHUB_TOKEN }}
+          echo "IMAGE_DIGEST=${{ steps.push.outputs.digest }}" >> "$GITHUB_ENV"
+          echo "${{ steps.push.outputs.digest }}" > dist/image-digest.txt
+          echo "Captured digest: ${{ steps.push.outputs.digest }}"
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
 
+      # Optional but recommended: sign the image manifest (keyless)
       - name: Sign image with Cosign
-        env:
-          COSIGN_EXPERIMENTAL: '1'
         run: |
-          cosign sign --yes ${{ env.IMAGE_NAME }}@${{ env.IMAGE_DIGEST }}
+          cosign sign --yes "${IMAGE_NAME}@${IMAGE_DIGEST}"
 
-      - name: Generate provenance predicate
+      # Verify the provenance attestation produced above (gate on repo identity)
+      - name: Verify SLSA provenance attestation
         run: |
-          python scripts/generate_provenance.py \
-            --image ${{ env.IMAGE_NAME }} \
-            --digest ${{ env.IMAGE_DIGEST }} \
-            --version ${{ steps.version.outputs.version }} \
-            --output dist/provenance.json
-
-      - name: Generate provenance attestation (attach to image)
-        env:
-          COSIGN_EXPERIMENTAL: '1'
-        run: |
-          cosign attest --yes \
-            --predicate dist/provenance.json \
+          cosign verify-attestation \
             --type slsaprovenance \
-            ${{ env.IMAGE_NAME }}@${{ env.IMAGE_DIGEST }}
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}(/.|@).*" \
+            "${IMAGE_NAME}@${IMAGE_DIGEST}" \
+            | jq . > /dev/null
 
-      - name: Download attestation to artifact file
-        env:
-          COSIGN_EXPERIMENTAL: '1'
+      # Download provenance (.intoto.jsonl) and SBOM (SPDX) from the registry to ship with the release
+      - name: Download provenance & SBOM
         run: |
           mkdir -p dist
-          cosign download attestation ${{ env.IMAGE_NAME }}@${{ env.IMAGE_DIGEST }} \
-            > dist/provenance.intoto.jsonl
+          cosign download attestation \
+            --predicate-type slsaprovenance \
+            "${IMAGE_NAME}@${IMAGE_DIGEST}" > dist/provenance.intoto.jsonl
+          # deterministic, digest-suffixed copies
+          cp dist/provenance.intoto.jsonl "dist/provenance.${IMAGE_DIGEST#sha256:}.intoto.jsonl"
+
+          cosign download sbom \
+            "${IMAGE_NAME}@${IMAGE_DIGEST}" > dist/sbom.spdx.json
+          cp dist/sbom.spdx.json "dist/sbom.${IMAGE_DIGEST#sha256:}.spdx.json"
 
       - name: Render release notes
         run: |
           python scripts/render_release_notes.py \
-            --version ${{ steps.version.outputs.version }} \
-            --image-digest ${{ env.IMAGE_DIGEST }} \
-            --owner ${{ github.repository_owner }} \
+            --version "${{ steps.version.outputs.version }}" \
+            --image-digest "${IMAGE_DIGEST}" \
+            --owner "${{ github.repository_owner }}" \
             --output dist/release-notes.md
 
       - name: Create GitHub release
@@ -148,5 +153,3 @@ jobs:
             example.env
             compose.service.yaml
             dist/image-digest.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
