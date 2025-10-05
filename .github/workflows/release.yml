@@ -119,19 +119,76 @@ jobs:
             "${IMAGE_NAME}@${IMAGE_DIGEST}" \
             | jq . > /dev/null
 
+      - name: Inspect OCI referrers (debug)
+        run: |
+          set -euo pipefail
+          ref="${IMAGE_NAME}@${IMAGE_DIGEST}"
+          echo "=== cosign tree (index) ==="
+          cosign tree "${ref}" || true
+
       # Download provenance (.intoto.jsonl) and SBOM (SPDX) from the registry to ship with the release
       - name: Download provenance & SBOM
         run: |
+          set -euo pipefail
           mkdir -p dist
-          cosign download attestation \
-            --predicate-type slsaprovenance \
-            "${IMAGE_NAME}@${IMAGE_DIGEST}" > dist/provenance.intoto.jsonl
-          # deterministic, digest-suffixed copies
-          cp dist/provenance.intoto.jsonl "dist/provenance.${IMAGE_DIGEST#sha256:}.intoto.jsonl"
+          ref="${IMAGE_NAME}@${IMAGE_DIGEST}"
 
-          cosign download sbom \
-            "${IMAGE_NAME}@${IMAGE_DIGEST}" > dist/sbom.spdx.json
-          cp dist/sbom.spdx.json "dist/sbom.${IMAGE_DIGEST#sha256:}.spdx.json"
+          # Retry a few times for eventual consistency on GHCR referrers
+          tries=8
+          delay=5
+          got_index_attest=0
+          for i in $(seq 1 ${tries}); do
+            if cosign download attestation --predicate-type slsaprovenance "${ref}" > dist/provenance.intoto.jsonl 2>/dev/null; then
+              echo "Fetched index-level provenance attestation."
+              got_index_attest=1
+              break
+            fi
+            echo "No index-level provenance yet (try ${i}/${tries}); sleeping ${delay}s..."
+            sleep "${delay}"
+          done
+
+          # If index-level provenance not found, fall back to per-platform manifests
+          if [ "${got_index_attest}" -eq 0 ]; then
+            echo "Falling back to per-platform manifests…"
+            docker buildx imagetools inspect --raw "${ref}" | jq -r '.manifests[].digest' > dist/_platform_digests.txt
+
+            while read -r pd; do
+              [ -n "$pd" ] || continue
+              echo "Trying ${IMAGE_NAME}@${pd} for provenance…"
+              if cosign download attestation --predicate-type slsaprovenance "${IMAGE_NAME}@${pd}" > "dist/provenance.${pd#sha256:}.intoto.jsonl" 2>/dev/null; then
+                cp "dist/provenance.${pd#sha256:}.intoto.jsonl" dist/provenance.intoto.jsonl
+                got_index_attest=1
+                break
+              fi
+            done < dist/_platform_digests.txt
+          fi
+
+          if [ "${got_index_attest}" -eq 0 ] || [ ! -s dist/provenance.intoto.jsonl ]; then
+            echo "ERROR: No provenance attestation found at index or platform manifests."
+            echo "Tip: ensure 'actions/attest-build-provenance@v3' ran with 'push-to-registry: true' and the same subject digest."
+            exit 1
+          fi
+
+          # SBOM: try index-level first, then per-platform
+          if ! cosign download sbom "${ref}" > dist/sbom.spdx.json 2>/dev/null; then
+            echo "No index-level SBOM found; trying per-platform manifests…"
+            # If platform list not already generated, generate it
+            if [ ! -f dist/_platform_digests.txt ]; then
+              docker buildx imagetools inspect --raw "${ref}" | jq -r '.manifests[].digest' > dist/_platform_digests.txt
+            fi
+            while read -r pd; do
+              [ -n "$pd" ] || continue
+              echo "Trying ${IMAGE_NAME}@${pd} for SBOM…"
+              if cosign download sbom "${IMAGE_NAME}@${pd}" > "dist/sbom.${pd#sha256:}.spdx.json" 2>/dev/null; then
+                cp "dist/sbom.${pd#sha256:}.spdx.json" dist/sbom.spdx.json
+                break
+              fi
+            done < dist/_platform_digests.txt
+          fi
+
+          # Deterministic, digest-suffixed copies for traceability
+          cp dist/provenance.intoto.jsonl "dist/provenance.${IMAGE_DIGEST#sha256:}.intoto.jsonl"
+          [ -f dist/sbom.spdx.json ] && cp dist/sbom.spdx.json "dist/sbom.${IMAGE_DIGEST#sha256:}.spdx.json" || true
 
       - name: Render release notes
         run: |
