@@ -12,7 +12,7 @@ permissions:
   attestations: write
 
 env:
-  IMAGE_NAME: ghcr.io/${{ toLower(github.repository) }}
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
 
 jobs:
   release:
@@ -20,6 +20,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Compute IMAGE_NAME
+        shell: bash
+        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - name: Set up Python
         uses: actions/setup-python@v5
