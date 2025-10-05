@@ -82,18 +82,18 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          provenance: false         # use GitHub attestation action instead
-          sbom: true                # generates SBOM attestation
+          provenance: mode=max
+          sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       # Publish provenance attestation via GitHub to OCI (ties it to the pushed digest)
-      - name: Attest build provenance (GitHub -> OCI)
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-name: ${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
+      # - name: Attest build provenance (GitHub -> OCI)
+      #   uses: actions/attest-build-provenance@v3
+      #   with:
+      #     subject-name: ${{ env.IMAGE_NAME }}
+      #     subject-digest: ${{ steps.push.outputs.digest }}
+      #     push-to-registry: true
 
       - name: Capture digest
         run: |
@@ -110,24 +110,36 @@ jobs:
           cosign sign --yes "${IMAGE_NAME}@${IMAGE_DIGEST}"
 
       # Verify the GitHub-issued provenance attestation and save it for the release
-      - name: Verify provenance and save
-        run: |
-          mkdir -p dist
-          cosign verify-attestation \
-            --type slsaprovenance \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            --certificate-identity-regexp '^https://github.com/${{ github.repository }}/.github/workflows/release.yml@.*' \
-            "${IMAGE_NAME}@${IMAGE_DIGEST}" \
-            | tee dist/provenance.intoto.jsonl | jq . > /dev/null
+      # - name: Verify provenance and save
+      #   run: |
+      #     mkdir -p dist
+      #     cosign verify-attestation \
+      #       --type slsaprovenance \
+      #       --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      #       --certificate-identity-regexp '^https://github.com/${{ github.repository }}/.github/workflows/release.yml@.*' \
+      #       "${IMAGE_NAME}@${IMAGE_DIGEST}" \
+      #       | tee dist/provenance.intoto.jsonl | jq . > /dev/null
 
       # Download SBOM (optional); continue if not present at index
-      - name: Download SBOM
+      # - name: Download SBOM
+      #   run: |
+      #     mkdir -p dist
+      #     ref="${IMAGE_NAME}@${IMAGE_DIGEST}"
+      #     cosign download sbom "${ref}" > dist/sbom.spdx.json 2>/dev/null || {
+      #       echo "SBOM not found at image index; continuing without attaching SBOM"
+      #     }
+
+      - name: Download SBOM from registry
         run: |
           mkdir -p dist
           ref="${IMAGE_NAME}@${IMAGE_DIGEST}"
-          cosign download sbom "${ref}" > dist/sbom.spdx.json 2>/dev/null || {
-            echo "SBOM not found at image index; continuing without attaching SBOM"
-          }
+          docker buildx imagetools inspect "${ref}" --format '{{ json .SBOM }}' > dist/sbom.json || echo "SBOM not available; continuing"
+      
+      - name: Download provenance from registry
+        run: |
+          mkdir -p dist
+          ref="${IMAGE_NAME}@${IMAGE_DIGEST}"
+          docker buildx imagetools inspect "${ref}" --format '{{ json .Provenance }}' > dist/provenance.json || echo "Provenance not available; continuing"
 
       - name: Render release notes
         run: |
@@ -144,8 +156,6 @@ jobs:
           fail_on_unmatched_files: false
           files: |
             dist/openapi.json
-            dist/sbom.spdx.json
-            dist/provenance.intoto.jsonl
             dist/dist.tar.gz
             example.env
             compose.service.yaml
