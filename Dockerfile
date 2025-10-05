@@ -5,15 +5,6 @@ ENV VIRTUAL_ENV=/opt/venv
 RUN python -m venv "$VIRTUAL_ENV"
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# System packages required to build Pillow wheels
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libjpeg62-turbo-dev \
-    zlib1g-dev \
-    libopenjp2-7-dev \
-    libtiff5-dev \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
@@ -22,14 +13,6 @@ FROM python:3.11-slim-bookworm AS runtime
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
-
-# Install runtime dependencies for Pillow
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libjpeg62-turbo \
-    zlib1g \
-    libopenjp2-7 \
-    libtiff5 \
-    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder "$VIRTUAL_ENV" "$VIRTUAL_ENV"
 
