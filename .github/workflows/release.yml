@@ -71,7 +71,7 @@ jobs:
             type=ref,event=tag
             type=raw,value=latest
 
-      # Single build & push (multi-arch) with provenance + SBOM emitted as attestations
+      # Single build & push (multi-arch). SBOM emitted by buildx.
       - name: Build and push image
         id: push
         uses: docker/build-push-action@v6
@@ -82,7 +82,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          provenance: mode=max      # generates SLSA provenance attestation
+          provenance: false         # use GitHub attestation action instead
           sbom: true                # generates SBOM attestation
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -109,86 +109,25 @@ jobs:
         run: |
           cosign sign --yes "${IMAGE_NAME}@${IMAGE_DIGEST}"
 
-      # Verify the provenance attestation produced above (gate on repo identity)
-      - name: Verify SLSA provenance attestation
+      # Verify the GitHub-issued provenance attestation and save it for the release
+      - name: Verify provenance and save
         run: |
+          mkdir -p dist
           cosign verify-attestation \
             --type slsaprovenance \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            --certificate-identity-regexp "^https://github.com/${{ github.repository }}(/.|@).*" \
+            --certificate-identity-regexp '^https://github.com/${{ github.repository }}/.github/workflows/release.yml@.*' \
             "${IMAGE_NAME}@${IMAGE_DIGEST}" \
-            | jq . > /dev/null
+            | tee dist/provenance.intoto.jsonl | jq . > /dev/null
 
-      - name: Inspect OCI referrers (debug)
+      # Download SBOM (optional); continue if not present at index
+      - name: Download SBOM
         run: |
-          set -euo pipefail
-          ref="${IMAGE_NAME}@${IMAGE_DIGEST}"
-          echo "=== cosign tree (index) ==="
-          cosign tree "${ref}" || true
-
-      # Download provenance (.intoto.jsonl) and SBOM (SPDX) from the registry to ship with the release
-      - name: Download provenance & SBOM
-        run: |
-          set -euo pipefail
           mkdir -p dist
           ref="${IMAGE_NAME}@${IMAGE_DIGEST}"
-
-          # Retry a few times for eventual consistency on GHCR referrers
-          tries=8
-          delay=5
-          got_index_attest=0
-          for i in $(seq 1 ${tries}); do
-            if cosign download attestation --predicate-type slsaprovenance "${ref}" > dist/provenance.intoto.jsonl 2>/dev/null; then
-              echo "Fetched index-level provenance attestation."
-              got_index_attest=1
-              break
-            fi
-            echo "No index-level provenance yet (try ${i}/${tries}); sleeping ${delay}s..."
-            sleep "${delay}"
-          done
-
-          # If index-level provenance not found, fall back to per-platform manifests
-          if [ "${got_index_attest}" -eq 0 ]; then
-            echo "Falling back to per-platform manifests…"
-            docker buildx imagetools inspect --raw "${ref}" | jq -r '.manifests[].digest' > dist/_platform_digests.txt
-
-            while read -r pd; do
-              [ -n "$pd" ] || continue
-              echo "Trying ${IMAGE_NAME}@${pd} for provenance…"
-              if cosign download attestation --predicate-type slsaprovenance "${IMAGE_NAME}@${pd}" > "dist/provenance.${pd#sha256:}.intoto.jsonl" 2>/dev/null; then
-                cp "dist/provenance.${pd#sha256:}.intoto.jsonl" dist/provenance.intoto.jsonl
-                got_index_attest=1
-                break
-              fi
-            done < dist/_platform_digests.txt
-          fi
-
-          if [ "${got_index_attest}" -eq 0 ] || [ ! -s dist/provenance.intoto.jsonl ]; then
-            echo "ERROR: No provenance attestation found at index or platform manifests."
-            echo "Tip: ensure 'actions/attest-build-provenance@v3' ran with 'push-to-registry: true' and the same subject digest."
-            exit 1
-          fi
-
-          # SBOM: try index-level first, then per-platform
-          if ! cosign download sbom "${ref}" > dist/sbom.spdx.json 2>/dev/null; then
-            echo "No index-level SBOM found; trying per-platform manifests…"
-            # If platform list not already generated, generate it
-            if [ ! -f dist/_platform_digests.txt ]; then
-              docker buildx imagetools inspect --raw "${ref}" | jq -r '.manifests[].digest' > dist/_platform_digests.txt
-            fi
-            while read -r pd; do
-              [ -n "$pd" ] || continue
-              echo "Trying ${IMAGE_NAME}@${pd} for SBOM…"
-              if cosign download sbom "${IMAGE_NAME}@${pd}" > "dist/sbom.${pd#sha256:}.spdx.json" 2>/dev/null; then
-                cp "dist/sbom.${pd#sha256:}.spdx.json" dist/sbom.spdx.json
-                break
-              fi
-            done < dist/_platform_digests.txt
-          fi
-
-          # Deterministic, digest-suffixed copies for traceability
-          cp dist/provenance.intoto.jsonl "dist/provenance.${IMAGE_DIGEST#sha256:}.intoto.jsonl"
-          [ -f dist/sbom.spdx.json ] && cp dist/sbom.spdx.json "dist/sbom.${IMAGE_DIGEST#sha256:}.spdx.json" || true
+          cosign download sbom "${ref}" > dist/sbom.spdx.json 2>/dev/null || {
+            echo "SBOM not found at image index; continuing without attaching SBOM"
+          }
 
       - name: Render release notes
         run: |
@@ -202,6 +141,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body_path: dist/release-notes.md
+          fail_on_unmatched_files: false
           files: |
             dist/openapi.json
             dist/sbom.spdx.json
