@@ -111,15 +111,22 @@ jobs:
             --version ${{ steps.version.outputs.version }} \
             --output dist/provenance.json
 
-      - name: Generate provenance attestation
+      - name: Generate provenance attestation (attach to image)
         env:
           COSIGN_EXPERIMENTAL: '1'
         run: |
           cosign attest --yes \
             --predicate dist/provenance.json \
             --type slsaprovenance \
-            --output dist/provenance.intoto.jsonl \
             ${{ env.IMAGE_NAME }}@${{ env.IMAGE_DIGEST }}
+
+      - name: Download attestation to artifact file
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+        run: |
+          mkdir -p dist
+          cosign download attestation ${{ env.IMAGE_NAME }}@${{ env.IMAGE_DIGEST }} \
+            > dist/provenance.intoto.jsonl
 
       - name: Render release notes
         run: |
